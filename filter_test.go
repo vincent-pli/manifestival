@@ -15,7 +15,7 @@ func True(_ *unstructured.Unstructured) bool {
 	return true
 }
 
-var False = None(True)
+var False = Not(True)
 
 func TestFilter(t *testing.T) {
 	manifest, _ := NewManifest("testdata/k-s-v0.12.1.yaml")
@@ -24,8 +24,12 @@ func TestFilter(t *testing.T) {
 		predicates []Predicate
 		count      int
 	}{{
-		name:       "No predicates",
-		predicates: []Predicate{},
+		name:       "Nothing",
+		predicates: []Predicate{Nothing},
+		count:      0,
+	}, {
+		name:       "Everything",
+		predicates: []Predicate{Everything},
 		count:      55,
 	}, {
 		name:       "No matches for label",
@@ -80,20 +84,12 @@ func TestFilter(t *testing.T) {
 		predicates: []Predicate{Any(False, False)},
 		count:      0,
 	}, {
-		name:       "None, first true then false",
-		predicates: []Predicate{None(True, False)},
+		name:       "Not true",
+		predicates: []Predicate{Not(True)},
 		count:      0,
 	}, {
-		name:       "None, first false then true",
-		predicates: []Predicate{None(False, True)},
-		count:      0,
-	}, {
-		name:       "None, both true",
-		predicates: []Predicate{None(True, True)},
-		count:      0,
-	}, {
-		name:       "None, both false",
-		predicates: []Predicate{None(False, False)},
+		name:       "Not false",
+		predicates: []Predicate{Not(False)},
 		count:      55,
 	}, {
 		name:       "One match By GVK",
@@ -167,5 +163,49 @@ func TestConvertFilter(t *testing.T) {
 		if cm.Data["foo"] != "bar" {
 			t.Error("Data not there")
 		}
+	}
+}
+
+func TestInFilter(t *testing.T) {
+	eleven, _ := NewManifest("testdata/k-s-v0.11.0.yaml")
+	twelve, _ := NewManifest("testdata/k-s-v0.12.1.yaml")
+	new := twelve.Filter(Not(In(eleven)))
+	if len(new.Resources()) != 1 {
+		t.Error("Missing the autoscaler-hpa Service")
+	}
+}
+
+func TestAnnotations(t *testing.T) {
+	manifest, _ := NewManifest("testdata/tree/file.yaml")
+	tests := []struct {
+		name       string
+		predicates []Predicate
+		count      int
+	}{{
+		name:       "No matches for specific annotation",
+		predicates: []Predicate{ByAnnotation("foo", "bar")},
+		count:      0,
+	}, {
+		name:       "No matches for any annotation",
+		predicates: []Predicate{ByAnnotation("missing", "")},
+		count:      0,
+	}, {
+		name:       "Annotation has any value",
+		predicates: []Predicate{ByAnnotation("foo", "")},
+		count:      2,
+	}, {
+		name:       "Annotation has specific value",
+		predicates: []Predicate{ByAnnotation("foo", "true")},
+		count:      1,
+	}}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			actual := manifest.Filter(test.predicates...)
+			count := len(actual.Resources())
+			if count != test.count {
+				t.Errorf("wanted %v, got %v", test.count, count)
+			}
+		})
 	}
 }
